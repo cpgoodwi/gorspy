@@ -1,11 +1,31 @@
+"""
+Gorspy v2
+	- build model on one image at a time
+	- recreate each image with model
+	- stitch images together
+"""
+
 from PIL import Image
 import numpy as np
 from joblib import Parallel, delayed
 import pickle
+import os
 import os.path
 
 
 def main():
+	# load images into dictionary
+	original_images = load_image_data('mountain_images_training')
+
+	# map a red, green, and blue model to each image
+	# image_and_models = [{
+	# 	'image_data': image_data,
+	# 	'split_data': split_image_data(image_data),
+	# 	'red_model': LinearRegression(),
+	# 	'green_model': LinearRegression(),
+	# 	'blue_model': LinearRegression()
+	# } for image_data in original_images]
+
 	# initialize the testing image
 	print('loading test image...')
 	test_mountain_image = Image.open('mountain_images_testing/phoenix-mountain-preserve-short.jpg')
@@ -85,11 +105,19 @@ def main():
 	# print(new_rgb_shaped.shape)
 
 	output_image = Image.fromarray(new_rgb_shaped)
-	output_image.save('output_images/test2.jpg')
+	# output_image.save('output_images/test2.jpg')
 
 
-# output_image = Image.fromarray(mountain_images_data[1])
-# output_image.save('output_images/test.png')  # this works!
+def load_image_data(directory):
+	"""
+	loads a numpy image arrays of .jpg files
+	:param directory: absolute or relative path of directory containing .jpg images to process
+	:return: list of numpy image arrays for each .jpg in the directory
+	"""
+	image_files = os.listdir(directory)
+	images = [Image.open(f'{directory}/{file_name}') for file_name in image_files]  # TODO: add filter to select only jpgs
+	images_data = {file_name:np.asarray(image) for (file_name, image) in zip(image_files, images)}  # TODO: figure out how to fix this warning...
+	return images_data
 
 
 def normalize(image_data):
@@ -152,7 +180,7 @@ def batch_train(normal_image_split_dict, fit_red, fit_green, fit_blue):
 	:param fit_red: reference to red model fit method
 	:param fit_green: reference to green model fit method
 	:param fit_blue: reference to blue model fit method
-	:return: none
+	:return: void
 	"""
 	n_jobs = 4
 	# print('training red')
@@ -219,6 +247,18 @@ class LinearRegression:
 
 	def predict(self, testing_input):
 		return np.dot(testing_input, self.weights) + self.bias
+
+
+class ImageStruct:
+	def __init__(self, file_name, image_data):
+		self.file_name = file_name
+
+		# TODO: change linear regression class to take input data in constructor
+		self.red_model = LinearRegression()
+		self.green_model = LinearRegression()
+		self.blue_model = LinearRegression()
+
+		split_data = split_image_data(image_data)
 
 
 if __name__ == '__main__':
