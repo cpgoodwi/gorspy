@@ -14,9 +14,6 @@ import os.path
 
 
 def main():
-	# load images into dictionary
-	original_images = load_image_data('mountain_images_training')
-
 	# map a red, green, and blue model to each image
 	# image_and_models = [{
 	# 	'image_data': image_data,
@@ -26,6 +23,16 @@ def main():
 	# 	'blue_model': LinearRegression()
 	# } for image_data in original_images]
 
+	# process_1()
+	process_2()
+	# process_3()
+
+
+def process_1():
+	"""
+	original process: train models on source images, test model on stitched image
+	:return: void
+	"""
 	# initialize the testing image
 	print('loading test image...')
 	test_mountain_image = Image.open('mountain_images_testing/phoenix-mountain-preserve-short.jpg')
@@ -37,8 +44,8 @@ def main():
 	# initialize models for each color channel
 	# TODO: shorten this if statement
 	if os.path.isfile('preloaded_models/red_model.pkl') and \
-		os.path.isfile('preloaded_models/green_model.pkl') and \
-		os.path.isfile('preloaded_models/blue_model.pkl'):
+			os.path.isfile('preloaded_models/green_model.pkl') and \
+			os.path.isfile('preloaded_models/blue_model.pkl'):
 		print('loading preloaded models...')
 		with open('preloaded_models/red_model.pkl', 'rb') as red_file:
 			red_model = pickle.load(red_file)
@@ -105,10 +112,40 @@ def main():
 	# print(new_rgb_shaped.shape)
 
 	output_image = Image.fromarray(new_rgb_shaped)
-	# output_image.save('output_images/test2.jpg')
+	output_image.save('output_images/test2.jpg')
 
 
-def load_image_data(directory):
+def process_2():
+	"""
+	second process: train models for tiles of stitched-image, test models on those tiles
+	:return: void
+	"""
+	image = Image.open('sedona_images_4-22/solophotos/IMG_2084.JPG')
+	image_data = np.asarray(image)
+	image_height = image_data.shape[0]
+	image_width = image_data.shape[1]
+	image_struct = ImageStruct('img_2084.jpg', image_data)
+	[model.fit() for model in image_struct.color_models.values()]
+	new_red = image_struct.color_models['red'].predict()
+	new_green = image_struct.color_models['green'].predict()
+	new_blue = image_struct.color_models['blue'].predict()
+	new_rgb_flat = denormalize(np.stack((new_red, new_green, new_blue), axis=-1))
+	new_rgb_shaped = new_rgb_flat.reshape((image_height, image_width, 3))
+	new_image = Image.fromarray(new_rgb_shaped)
+	new_image.save('sedona_images_4-22/_outputs/gorspy_p2_img_2084.jpg')
+
+
+def process_3():
+	"""
+	third process: train models on source images and test them on the same images, then stitch them into output
+	:return: void
+	"""
+	# load images into dictionary
+	original_images = load_image_directory('mountain_images_training')
+	# TODO: finish this process
+
+
+def load_image_directory(directory):
 	"""
 	loads a numpy image arrays of .jpg files
 	:param directory: absolute or relative path of directory containing .jpg images to process
@@ -116,7 +153,7 @@ def load_image_data(directory):
 	"""
 	image_files = os.listdir(directory)
 	images = [Image.open(f'{directory}/{file_name}') for file_name in image_files]  # TODO: add filter to select only jpgs
-	images_data = {file_name:np.asarray(image) for (file_name, image) in zip(image_files, images)}  # TODO: figure out how to fix this warning...
+	images_data = {file_name: np.asarray(image) for (file_name, image) in zip(image_files, images)}  # TODO: figure out how to fix this warning...
 	return images_data
 
 
@@ -249,16 +286,44 @@ class LinearRegression:
 		return np.dot(testing_input, self.weights) + self.bias
 
 
+class PixelPredictorLR:
+	# TODO: add ability to load predictor from json
+	def __init__(self, train_input, train_output, learning_rate=0.01, n_iters=1000):
+		self.train_input = train_input
+		self.train_output = train_output
+		self.learning_rate = learning_rate
+		self.n_iters = n_iters
+		self.weights = None
+		self.bias = None
+
+	def fit(self):
+		n_samples, n_features = self.train_input.shape
+		self.weights = np.zeros(n_features)
+		self.bias = 0
+
+		for _ in range(self.n_iters):
+			predicted_output = np.dot(self.train_input, self.weights) + self.bias
+
+			dw = (1 / n_samples) * np.dot(self.train_input.T, (predicted_output - self.train_output))
+			db = (1 / n_samples) * np.sum(predicted_output - self.train_output)
+
+			self.weights -= self.learning_rate * dw
+			self.bias -= self.learning_rate * db
+
+	def predict(self, test_input=None):
+		return np.dot(self.train_input, self.weights) + self.bias
+
+
 class ImageStruct:
 	def __init__(self, file_name, image_data):
 		self.file_name = file_name
 
-		# TODO: change linear regression class to take input data in constructor
-		self.red_model = LinearRegression()
-		self.green_model = LinearRegression()
-		self.blue_model = LinearRegression()
-
-		split_data = split_image_data(image_data)
+		normal_split_data = split_image_data(normalize(image_data))
+		self.color_models = {
+			'red': PixelPredictorLR(normal_split_data['green_blue'], normal_split_data['red'], n_iters=100),
+			'green': PixelPredictorLR(normal_split_data['red_blue'], normal_split_data['green'], n_iters=100),
+			'blue': PixelPredictorLR(normal_split_data['red_green'], normal_split_data['blue'], n_iters=100)
+		}
 
 
 if __name__ == '__main__':
