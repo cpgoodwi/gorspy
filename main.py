@@ -14,24 +14,13 @@ import os.path
 
 
 def main():
-	# map a red, green, and blue model to each image
-	# image_and_models = [{
-	# 	'image_data': image_data,
-	# 	'split_data': split_image_data(image_data),
-	# 	'red_model': LinearRegression(),
-	# 	'green_model': LinearRegression(),
-	# 	'blue_model': LinearRegression()
-	# } for image_data in original_images]
-
-	# process_1()
-	process_2()
-	# process_3()
+	process_3()
 
 
 def process_1():
 	"""
 	original process: train models on source images, test model on stitched image
-	:return: void
+	:return: none
 	"""
 	# initialize the testing image
 	print('loading test image...')
@@ -115,34 +104,62 @@ def process_1():
 	output_image.save('output_images/test2.jpg')
 
 
-def process_2():
+def process_2(input_directory, output_directory, filename, image_data=None):
 	"""
-	second process: train models for tiles of stitched-image, test models on those tiles
-	:return: void
+	second process: train models for tiles of image, test models on those tiles
+	:return: none
 	"""
-	image = Image.open('sedona_images_4-22/solophotos/IMG_2084.JPG')
-	image_data = np.asarray(image)
-	image_height = image_data.shape[0]
-	image_width = image_data.shape[1]
-	image_struct = ImageStruct('img_2084.jpg', image_data)
-	[model.fit() for model in image_struct.color_models.values()]
-	new_red = image_struct.color_models['red'].predict()
-	new_green = image_struct.color_models['green'].predict()
-	new_blue = image_struct.color_models['blue'].predict()
-	new_rgb_flat = denormalize(np.stack((new_red, new_green, new_blue), axis=-1))
-	new_rgb_shaped = new_rgb_flat.reshape((image_height, image_width, 3))
-	new_image = Image.fromarray(new_rgb_shaped)
-	new_image.save('sedona_images_4-22/_outputs/gorspy_p2_img_2084.jpg')
+	# open image and convert it to numpy array, saving height and width
+	if image_data is None:
+		image = Image.open(f'{input_directory}/{filename}')
+		image_data = np.asarray(image)
+		image_height = image_data.shape[0]
+		image_width = image_data.shape[1]
+
+	# turn the image into 8 x 8 tiles
+	n_tiles_y = 8
+	n_tiles_x = 8
+	tiles = np.array_split(image_data, n_tiles_y, axis=0)
+	tiles = np.asarray([np.array_split(tile, n_tiles_x, axis=1) for tile in tiles])
+	tile_height = tiles.shape[2]
+	tile_width = tiles.shape[3]
+	# print(np.asarray(tiles).shape)
+
+	# run models on the tiles and paste the image together
+	tile_structs = [
+		ImageStruct(f'{filename}_{row}_{col}', tiles[row][col])
+		for row in range(n_tiles_y)
+		for col in range(n_tiles_x)
+	]
+	# fit each model on each tile TODO: parallelize fitting the models for each tile
+	[model.fit() for tile_struct in tile_structs for model in tile_struct.color_models.values()]
+	predicted_output = np.asarray([predict_struct(tile_struct) for tile_struct in tile_structs])
+	shaped_tiles_out = predicted_output.reshape((n_tiles_y, n_tiles_x, tile_height, tile_width, 3))
+
+	# stitch tiles back together
+	rows = [np.concatenate(row, axis=1) for row in shaped_tiles_out]
+	reshaped_data = np.concatenate(rows, axis=0)
+
+	# output the new image
+	new_image = Image.fromarray(reshaped_data)
+	new_image.save(f'{output_directory}/gorspy_p2_tiles_{filename}')
 
 
 def process_3():
 	"""
 	third process: train models on source images and test them on the same images, then stitch them into output
-	:return: void
+	:return: none
 	"""
+	input_directory = 'sedona_images_4-22/gigapixel1'
+	output_directory = 'sedona_images_4-22/_outputs/gp1_tiled'
+
 	# load images into dictionary
-	original_images = load_image_directory('mountain_images_training')
-	# TODO: finish this process
+	original_images = load_image_directory(input_directory)
+	# process each image of the dictionary
+	[
+		process_2(input_directory, output_directory, filename, image_data)
+		for filename, image_data in original_images.items()
+	]
 
 
 def load_image_directory(directory):
@@ -242,6 +259,15 @@ def batch_train(normal_image_split_dict, fit_red, fit_green, fit_blue):
 	print('batch complete')
 
 
+def predict_struct(image_struct):
+	new_red = image_struct.color_models['red'].predict()
+	new_green = image_struct.color_models['green'].predict()
+	new_blue = image_struct.color_models['blue'].predict()
+	new_rgb_flat = denormalize(np.stack((new_red, new_green, new_blue), axis=-1))
+	new_rgb_shaped = new_rgb_flat.reshape((image_struct.height, image_struct.width, 3))
+	return new_rgb_shaped
+
+
 class LinearRegression:
 	def __init__(self, learning_rate=0.01, n_iters=1000):
 		self.learning_rate = learning_rate
@@ -317,6 +343,8 @@ class PixelPredictorLR:
 class ImageStruct:
 	def __init__(self, file_name, image_data):
 		self.file_name = file_name
+		self.height = image_data.shape[0]
+		self.width = image_data.shape[1]
 
 		normal_split_data = split_image_data(normalize(image_data))
 		self.color_models = {
