@@ -14,7 +14,12 @@ import os.path
 
 
 def main():
-	process_3()
+	# process_3()
+	process_2(
+		input_directory='sedona_images_4-22/panos',
+		output_directory='sedona_images_4-22/_outputs/solophotos_tiled',
+		filename='ps-automerge-auto-gp1.png',
+	)
 
 
 def process_2(input_directory, output_directory, filename, image_data=None):
@@ -30,8 +35,8 @@ def process_2(input_directory, output_directory, filename, image_data=None):
 		image_width = image_data.shape[1]
 
 	# turn the image into tiles
-	n_tiles_y = 8
-	n_tiles_x = 8
+	n_tiles_y = 110  # TODO: automatically calculate these by the image size or add as parameters
+	n_tiles_x = 178
 	tiles = np.array_split(image_data, n_tiles_y, axis=0)
 	tiles = np.asarray([np.array_split(tile, n_tiles_x, axis=1) for tile in tiles])
 	tile_height = tiles.shape[2]
@@ -55,7 +60,7 @@ def process_2(input_directory, output_directory, filename, image_data=None):
 
 	# output the new image
 	new_image = Image.fromarray(reshaped_data)
-	new_image.save(f'{output_directory}/gorspy_p2_tiles_{filename}')
+	new_image.save(f'{output_directory}/gorspy_p2_tiles_{n_tiles_y}x{n_tiles_x}_{filename}')
 
 
 def process_3():
@@ -63,8 +68,8 @@ def process_3():
 	third process: train models on source images and test them on the same images, then stitch them into output
 	:return: none
 	"""
-	input_directory = 'phoenixmountainpreserve_images/gigapixel1'
-	output_directory = 'phoenixmountainpreserve_images/_outputs/gp1_tiled/8x8'
+	input_directory = 'sedona_images_4-22/panos'
+	output_directory = 'sedona_images_4-22/_outputs/solophotos_tiled'
 
 	# load images into dictionary
 	original_images = load_image_directory(input_directory)
